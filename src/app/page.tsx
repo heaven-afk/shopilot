@@ -243,8 +243,8 @@ function Home({
         const conflicts = (data as State).products.filter((p) => p.stock < 0);
         setNotice(
           conflicts.length
-            ? `Synced. ${conflicts.length} stock balance(s) need reconciliation after offline sales. Review physical stock and record adjustments.`
-            : "Business records synchronised with Supabase.",
+            ? `Your records are saved. Please check stock for ${conflicts.length} ${conflicts.length === 1 ? "product" : "products"} after sales made offline.`
+            : "All up to date. Your latest business records are saved to your Shopilot account.",
         );
       });
     } catch (e) {
@@ -1618,10 +1618,10 @@ function Home({
               />
               <hr />
               <p>
-                Records are saved in this browser first. A connected Supabase
-                workspace syncs while online. Records marked pending sync have
-                not been backed up to the cloud. Export a backup regularly;
-                clearing browser data can remove local records.
+                Shopilot saves your changes on this device first, then to your
+                account when you’re online. Records marked pending sync have not
+                been backed up to the cloud. Export a backup regularly; clearing
+                browser data can remove local records.
               </p>
               <button
                 className="button primary"
@@ -1643,13 +1643,12 @@ function Home({
                 <Download size={17} /> Export device backup
               </button>
               <hr />
-              <h3>Service configuration</h3>
+              <h3>Your records, wherever you work</h3>
               <p>
-                Configure Supabase and Gemini on the server using the project’s
-                environment template. Run the Supabase migration before
-                connecting. Tenant isolation and sync require integration
-                testing against your configured project before live business
-                use.
+                Sign in to your Shopilot account to access your saved business
+                records on another device. Before switching devices, check that
+                your latest changes have finished saving. You can use Sync now
+                to save any pending updates while you’re online.
               </p>
               <div className="setup-list">
                 <span>

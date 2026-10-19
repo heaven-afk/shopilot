@@ -1,4 +1,4 @@
-const CACHE = "shopilot-shell-v4-mobile";
+const CACHE = "shopilot-shell-v5-save-messages";
 self.addEventListener("install", (event) => {
   self.skipWaiting();
 });
