@@ -28,18 +28,18 @@ Development mode deliberately does not register the service worker. On localhost
 ## Configure Supabase
 
 1. Create a Supabase project; retain its database password securely.
-2. Apply migrations `001_foundation.sql` then `002_business_onboarding.sql` from `supabase/migrations/` using the SQL editor. Existing databases that already ran 001 need only 002. Do not rerun applied migrations.
+2. For a new database, apply `001_foundation.sql`, `002_business_onboarding.sql`, then `supabase/upgrade-team-admin.sql`. Existing databases with 001 and 002 need only the combined upgrade. Do not rerun applied migrations. For platform access, follow `docs/ADMIN-TEAM-RECOVERY.md` and run the separate privileged owner bootstrap once.
 3. Set `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` in `.env.local`. The latter is the public client key, not a service-role key. Never expose the service-role key in a browser variable.
 4. Configure Authentication site/redirect URLs for localhost and the eventual Vercel address. Keep email confirmation enabled and configure a suitable email sender before production.
 5. Restart the app. Choose Create an account on the opening page, enter owner name/email/password, confirm email if required, and sign in.
 6. Complete business setup: name, business type, optional phone and address. Returning owners enter their existing business directly. Each business uses a separate device database key. Existing device-only records are retained separately; they are not silently moved into an account.
-7. Add products to the cloud workspace and use Sync now. Sync also runs every minute while the page is open, and after connectivity returns. Unsynced records remain local if sync fails.
+7. Add products to the workspace. Changes trigger an online save immediately, with periodic, reconnect and focus retries. Settings → Sync now retries manually. Pending records remain local if an upload fails; the app shows the pending count and last completed save.
 
-The migration uses server-side membership checks, row-level security, composite tenant foreign keys, exact integer kobo values, immutable sales/items and payment entries, a per-business sync lock, and audit records. Do not add broad client write policies. Staff invitation and detailed staff permissions are not implemented yet.
+The migrations use server-side membership/role checks, row-level security, composite tenant foreign keys, exact integer kobo values, immutable sales/items and payment entries, per-business sync locks, and audit records. Staff invitations are email-bound and confirmed-email-only. Managers may change stock; sales staff may record sales/repayments; only business owners manage team/settings. Private platform roles are separate from business roles. Do not add broad client write policies.
 
 ### Sync boundaries
 
-This initial sync sends the bounded workspace journal and retrieves its current projection. It is suitable for development and a small pilot, not an unbounded production dataset. Incremental cursors, batching, server pagination, retry backoff, duplicate payload checks, conflict-resolution UI, and sync telemetry remain required before scaling.
+Sync sends the bounded workspace journal and retrieves its current projection. Local writes remain available during the network request; operations created in flight remain pending after the acknowledged snapshot is merged. This is suitable for a small pilot, not unbounded histories. Incremental cursors, batching, server pagination, configurable retry backoff, duplicate-content checks and dedicated conflict-resolution tooling remain required before large-scale use. The platform dashboard reports successful save activity, not complete server monitoring.
 
 Different offline devices can sell the same remaining stock. Both completed sales are retained when uploaded, and a negative derived stock balance is surfaced for reconciliation. No system can guarantee a globally current stock balance between disconnected devices without preallocating stock. Review physical stock and record a reasoned adjustment. Duplicate operation IDs are imported only once.
 
@@ -84,9 +84,9 @@ See `docs/ACCEPTANCE.md` for cloud, offline, concurrency, printer, and recogniti
 ## Current limitations / remaining work
 
 - Returns/reversals, split-payment breakdowns, stock-unit conversions, price editing/archiving, product CSV import, and complete customer profiles.
-- Staff invitations and permissions, account recovery UX, business settings/receipt branding, subscription billing and entitlements.
-- Payment acknowledgement receipts, dedicated 58mm layouts, automated PDFs, report filters/pagination, richer growth/action-plan workflows.
+- Subscription billing and entitlements are explicitly on hold. Staff permissions are role-based rather than field/report-level restrictions.
+- Payment acknowledgement receipts, physical 58mm/80mm printer validation, automated PDFs, report filters/pagination, richer growth/action-plan workflows.
 - Production-quality incremental sync and reconciliation; verified tenant isolation and database backup/restore drills.
-- Browser storage is not guaranteed permanent and the offline cache can be evicted. Clear device-only status is intentional. Export backups and verify cloud sync before replacing or clearing a device.
+- Persistent-storage requests, atomic pending-state metadata, immediate upload, business-bound JSON backup recovery and account restoration reduce device-storage risk. Browsers can still clear/evict unsynced records, and independent database disaster recovery remains necessary. See the upgrade guide for exact guarantees and deployment steps.
 
 See `PRODUCT-SCOPE.md` for the agreed direction and `docs/USER-GUIDE.md` for usage.

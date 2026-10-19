@@ -61,6 +61,19 @@ export async function POST(request: NextRequest) {
       { error: "Your session has expired. Sign in again." },
       { status: 401 },
     );
+  const permission = await supabase.rpc("may_scan_stock");
+  if (permission.error && permission.error.code !== "PGRST202")
+    return NextResponse.json(
+      {
+        error: "Photo receiving is temporarily unavailable. Please try again.",
+      },
+      { status: 503 },
+    );
+  if (!permission.error && !permission.data)
+    return NextResponse.json(
+      { error: "Only an owner or manager can receive stock from a photo." },
+      { status: 403 },
+    );
   const { data: quota, error: quotaError } = await supabase.rpc("reserve_scan");
   if (quotaError || !quota)
     return NextResponse.json(

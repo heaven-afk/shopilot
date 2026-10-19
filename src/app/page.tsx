@@ -41,13 +41,18 @@ import {
   writeState,
   readPhoto,
   writePhoto,
-  setStorageScope,
+  readSaveStatus,
+  deviceId,
+  type SaveStatus,
 } from "../lib/storage";
 import { getSupabase } from "../lib/supabase";
 import CloudSettings, { type Workspace } from "./cloud-settings";
 import AccessGate from "./access-gate";
 import MobileDashboard from "./mobile-dashboard";
 import { MobileSales, MobileProducts } from "./mobile-records";
+import DataProtection from "./data-protection";
+import { mergeBackup } from "../lib/backup";
+import { reconcileUpload } from "../lib/reconcile";
 
 type ScanRow = {
   name: string;
@@ -133,6 +138,48 @@ function Home({
     ),
     [syncing, setSyncing] = useState(false);
   const workspaceRef = useRef<Workspace | null>(initialWorkspace);
+  const syncInFlight = useRef(false);
+  const [saveStatus, setSaveStatus] = useState<SaveStatus | null>(null),
+    [platformAccess, setPlatformAccess] = useState(false);
+  const canManageStock =
+    workspace?.role === "owner" || workspace?.role === "manager";
+  function openStock(mode: "product" | "scan" | "receive") {
+    if (!canManageStock) {
+      setError(
+        "Your role can record sales and repayments. Ask your owner or manager to update inventory.",
+      );
+      return;
+    }
+    setModal(mode);
+  }
+  useEffect(() => {
+    setWorkspace(initialWorkspace);
+    workspaceRef.current = initialWorkspace;
+  }, [initialWorkspace]);
+  useEffect(() => {
+    getSupabase()
+      ?.rpc("platform_access")
+      .then(({ data }) => setPlatformAccess(Boolean(data)));
+  }, []);
+  useEffect(() => {
+    const update = () =>
+      readSaveStatus(initialWorkspace.id)
+        .then(setSaveStatus)
+        .catch(() => {});
+    update();
+    window.addEventListener("shopilot-save-status", update);
+    const leaving = (event: BeforeUnloadEvent) => {
+      if (saveStatus?.pendingIds.length) {
+        event.preventDefault();
+        event.returnValue = "";
+      }
+    };
+    window.addEventListener("beforeunload", leaving);
+    return () => {
+      window.removeEventListener("shopilot-save-status", update);
+      window.removeEventListener("beforeunload", leaving);
+    };
+  }, [saveStatus?.pendingIds.length]);
   const [mobileMore, setMobileMore] = useState(false);
   function navigateMobile(next: string) {
     setPage(next);
@@ -188,7 +235,7 @@ function Home({
   }, [modal, receipt, mobileMore]);
   useEffect(() => {
     if (!ready) return;
-    readPhoto()
+    readPhoto(initialWorkspace.id)
       .then(setImage)
       .catch(() => {});
     setScan([]);
@@ -198,64 +245,78 @@ function Home({
       await onExit();
       return;
     }
-    if (lock.current) throw new Error("Wait for the current save to finish.");
-    await navigator.locks.request("shopilot-write", async () => {
-      setStorageScope(value?.id || null);
-      const next = await readState();
-      current.current = next;
-      setState(next);
-      workspaceRef.current = value;
-      setWorkspace(value);
-      setCart({});
-      setReceipt(null);
-      const session = await getSupabase()?.auth.getSession();
-      if (value && session?.data.session)
-        localStorage.setItem(
-          "shopilot-workspace",
-          JSON.stringify({
-            userId: session.data.session.user.id,
-            workspace: value,
-          }),
-        );
-      else localStorage.removeItem("shopilot-workspace");
-    });
+    window.location.assign("/?choose=business");
   }
   async function syncCloud() {
     const client = getSupabase(),
       ws = workspaceRef.current;
-    if (!client || !ws || !navigator.onLine || lock.current) return;
-    lock.current = true;
+    if (!client || !ws || !navigator.onLine || syncInFlight.current) return;
+    syncInFlight.current = true;
     setSyncing(true);
+    let again = false;
     try {
-      await navigator.locks.request("shopilot-write", async () => {
-        const latest = await readState();
-        const { data, error } = await client
-          .rpc("sync_workspace", {
-            bid: ws.id,
-            payload: latest,
-          })
-          .abortSignal(AbortSignal.timeout(20000));
-        if (error) throw error;
-        await writeState(data as State);
-        current.current = data as State;
-        setState(data as State);
-        channel.current?.postMessage("changed");
-        const conflicts = (data as State).products.filter((p) => p.stock < 0);
-        setNotice(
-          conflicts.length
-            ? `Your records are saved. Please check stock for ${conflicts.length} ${conflicts.length === 1 ? "product" : "products"} after sales made offline.`
-            : "All up to date. Your latest business records are saved to your Shopilot account.",
-        );
-      });
-    } catch (e) {
-      setError(
-        `Sync did not complete: ${(e as Error).message}. Local records are retained.`,
+      await navigator.locks.request(
+        `shopilot-cloud-sync:${ws.id}`,
+        async () => {
+          const latest = await navigator.locks.request("shopilot-write", () =>
+            readState(ws.id),
+          );
+          const { data, error } = await client
+            .rpc("sync_workspace", {
+              bid: ws.id,
+              payload: { ...latest, deviceId: deviceId() },
+            })
+            .abortSignal(AbortSignal.timeout(20000));
+          if (error) throw error;
+          await navigator.locks.request("shopilot-write", async () => {
+            const remote = data as State;
+            remote.sales = remote.sales.map((s) => ({
+              ...s,
+              branding:
+                s.branding ?? latest.sales.find((x) => x.id === s.id)?.branding,
+            }));
+            const merged = reconcileUpload(
+              remote,
+              await readState(ws.id),
+              latest,
+            );
+            await writeState(merged, {
+              synced: true,
+              acknowledged: remote,
+              businessId: ws.id,
+            });
+            current.current = merged;
+            setState(merged);
+            again = (await readSaveStatus(ws.id)).pendingIds.length > 0;
+            channel.current?.postMessage("changed");
+            const conflicts = merged.products.filter((p) => p.stock < 0);
+            setNotice(
+              conflicts.length
+                ? `Your records are saved. Please check stock for ${conflicts.length} ${conflicts.length === 1 ? "product" : "products"} after sales made offline.`
+                : again
+                  ? "Recent records saved. Saving your newest changes next…"
+                  : "All up to date. Your latest business records are saved to your Shopilot account.",
+            );
+          });
+        },
       );
-      throw e;
+    } catch (e) {
+      const reason = (e as Error).message;
+      const friendly = /owner or manager|access denied|JWT|expired/i.test(
+        reason,
+      )
+        ? "Your access needs checking before these changes can be saved. Your pending records remain on this device. Sign in again or ask the business owner for help."
+        : /Repayment exceeds/.test(reason)
+          ? "A repayment needs review against payments from other devices. Your pending records remain here. Review the customer balance before trying again."
+          : "We couldn’t save your latest changes to your account right now. Your records remain on this device. Check your connection and try again.";
+      setError(friendly);
+      throw new Error(friendly);
     } finally {
-      lock.current = false;
+      syncInFlight.current = false;
       setSyncing(false);
     }
+    if (again && navigator.onLine)
+      setTimeout(() => syncCloud().catch(() => {}), 0);
   }
   useEffect(() => {
     if (!workspace || !ready) return;
@@ -265,13 +326,15 @@ function Home({
     run();
     const timer = setInterval(run, 60000);
     window.addEventListener("online", run);
+    window.addEventListener("focus", run);
     return () => {
       clearInterval(timer);
       window.removeEventListener("online", run);
+      window.removeEventListener("focus", run);
     };
   }, [workspace, ready]);
   useEffect(() => {
-    readState()
+    readState(initialWorkspace.id)
       .then((value) => {
         current.current = value;
         setState(value);
@@ -288,7 +351,7 @@ function Home({
     window.addEventListener("offline", update);
     channel.current = new BroadcastChannel("shopilot");
     channel.current.onmessage = () =>
-      readState().then((value) => {
+      readState(initialWorkspace.id).then((value) => {
         current.current = value;
         setState(value);
       });
@@ -321,9 +384,9 @@ function Home({
     setError("");
     try {
       await navigator.locks.request("shopilot-write", async () => {
-        const latest = await readState();
+        const latest = await readState(initialWorkspace.id);
         const next = change(latest);
-        await writeState(next);
+        await writeState(next, { businessId: initialWorkspace.id });
         current.current = next;
         setState(next);
         channel.current?.postMessage("changed");
@@ -339,6 +402,7 @@ function Home({
       lock.current = false;
       setBusy(false);
     }
+    if (navigator.onLine) setTimeout(() => syncCloud().catch(() => {}), 0);
   }
   const salesToday = state.sales.filter(
       (s) => today(s.createdAt) === today(new Date().toISOString()),
@@ -375,6 +439,8 @@ function Home({
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     try {
+      if (!canManageStock)
+        throw new Error("Only an owner or manager can add products.");
       const stock = Number(form.get("stock")),
         threshold = Number(form.get("threshold"));
       if (
@@ -422,6 +488,8 @@ function Home({
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     try {
+      if (!canManageStock)
+        throw new Error("Only an owner or manager can change stock.");
       const id = String(form.get("product")),
         qty = Number(form.get("quantity")),
         reason = String(form.get("reason"));
@@ -460,6 +528,15 @@ function Home({
       const sale: Sale = {
         id: crypto.randomUUID(),
         createdAt: new Date().toISOString(),
+        branding: {
+          name: workspace?.name,
+          phone: workspace?.phone,
+          address: workspace?.address,
+          footer:
+            workspace?.receipt_footer || "Thank you for shopping with us.",
+          width: workspace?.receipt_width || 80,
+          logoUrl: workspace?.logo_url || "",
+        },
         lines: Object.entries(cart)
           .filter(([, qty]) => qty > 0)
           .map(([id, quantity]) => {
@@ -501,7 +578,7 @@ function Home({
     }
     const reader = new FileReader();
     reader.onload = () => {
-      writePhoto(String(reader.result))
+      writePhoto(String(reader.result), initialWorkspace.id)
         .then(() => {
           setImage(String(reader.result));
           setScan([]);
@@ -548,6 +625,8 @@ function Home({
   }
   async function confirmScan() {
     try {
+      if (!canManageStock)
+        throw new Error("Only an owner or manager can receive stock.");
       if (
         !scan.length ||
         scan.some(
@@ -584,7 +663,7 @@ function Home({
       setModal(null);
       setScan([]);
       setImage(null);
-      await writePhoto(null);
+      await writePhoto(null, initialWorkspace.id);
       setNotice("Reviewed stock received.");
     } catch (e) {
       setError((e as Error).message);
@@ -791,7 +870,13 @@ function Home({
             </span>
             <div>
               <strong>{ownerName}</strong>
-              <small>Business owner</small>
+              <small>
+                {workspace?.role === "owner"
+                  ? "Business owner"
+                  : workspace?.role === "manager"
+                    ? "Manager"
+                    : "Sales staff"}
+              </small>
             </div>
           </div>
         </div>
@@ -862,7 +947,7 @@ function Home({
                 <>
                   <button
                     className="button secondary"
-                    onClick={() => setModal("scan")}
+                    onClick={() => openStock("scan")}
                   >
                     <Camera size={17} /> Scan stock
                   </button>
@@ -877,13 +962,13 @@ function Home({
                 <>
                   <button
                     className="button secondary"
-                    onClick={() => setModal("receive")}
+                    onClick={() => openStock("receive")}
                   >
                     <ArrowDownLeft size={17} /> Receive stock
                   </button>
                   <button
                     className="button primary"
-                    onClick={() => setModal("product")}
+                    onClick={() => openStock("product")}
                   >
                     <Plus size={17} /> Add product
                   </button>
@@ -937,10 +1022,11 @@ function Home({
                 online={online}
                 syncing={syncing}
                 onNavigate={navigateMobile}
-                onScan={() => setModal("scan")}
-                onReceive={() => setModal("receive")}
-                onProduct={() => setModal("product")}
+                onScan={() => openStock("scan")}
+                onReceive={() => openStock("receive")}
+                onProduct={() => openStock("product")}
                 onReceipt={setReceipt}
+                canManageStock={canManageStock}
               />
               <div className="desktop-overview">
                 <div className="period-row">
@@ -1107,7 +1193,7 @@ function Home({
                       onClick={() =>
                         state.products.length
                           ? setPage("Business insights")
-                          : setModal("product")
+                          : openStock("product")
                       }
                     >
                       {state.products.length
@@ -1212,7 +1298,7 @@ function Home({
               </div>
               <MobileProducts
                 products={filtered}
-                onAdd={() => setModal("product")}
+                onAdd={() => openStock("product")}
               />
               <div className="table-wrap inventory-desktop-table">
                 <table>
@@ -1261,7 +1347,7 @@ function Home({
                             </small>
                             <button
                               className="button primary"
-                              onClick={() => setModal("product")}
+                              onClick={() => openStock("product")}
                             >
                               <Plus size={16} /> Add product
                             </button>
@@ -1276,7 +1362,7 @@ function Home({
                 <h2>Stock movement history</h2>
                 <button
                   className="text-button"
-                  onClick={() => setModal("scan")}
+                  onClick={() => openStock("scan")}
                 >
                   <Camera size={16} /> Receive from photo
                 </button>
@@ -1359,7 +1445,7 @@ function Home({
                     Add products before recording a sale.
                     <button
                       className="button primary"
-                      onClick={() => setModal("product")}
+                      onClick={() => openStock("product")}
                     >
                       Add product
                     </button>
@@ -1615,6 +1701,19 @@ function Home({
                 onWorkspace={switchWorkspace}
                 onSync={syncCloud}
                 disabled={busy || syncing || !online}
+                onSaved={(value) => {
+                  setWorkspace(value);
+                  workspaceRef.current = value;
+                  const saved = JSON.parse(
+                    localStorage.getItem("shopilot-authorised-business-v1") ||
+                      "null",
+                  );
+                  if (saved?.workspace?.id === value.id)
+                    localStorage.setItem(
+                      "shopilot-authorised-business-v1",
+                      JSON.stringify({ ...saved, workspace: value }),
+                    );
+                }}
               />
               <hr />
               <p>
@@ -1623,25 +1722,20 @@ function Home({
                 been backed up to the cloud. Export a backup regularly; clearing
                 browser data can remove local records.
               </p>
-              <button
-                className="button primary"
-                onClick={() =>
-                  download(
-                    "shopilot-backup.json",
-                    JSON.stringify(
-                      {
-                        version: 1,
-                        exportedAt: new Date().toISOString(),
-                        ...state,
-                      },
-                      null,
-                      2,
-                    ),
-                  )
-                }
-              >
-                <Download size={17} /> Export device backup
-              </button>
+              <DataProtection
+                businessId={initialWorkspace.id}
+                state={state}
+                canRestore={canManageStock}
+                onRestore={(backup) => mutate((s) => mergeBackup(s, backup))}
+              />
+              <a className="button secondary" href="/?choose=business">
+                Switch business / accept invitations
+              </a>
+              {platformAccess && (
+                <a className="button secondary" href="/admin">
+                  Shopilot platform dashboard
+                </a>
+              )}
               <hr />
               <h3>Your records, wherever you work</h3>
               <p>
@@ -1666,8 +1760,10 @@ function Home({
                   </strong>
                 </span>
                 <span>
-                  Stock recognition
-                  <strong>Requires configured Gemini key</strong>
+                  Photo stock entry
+                  <strong>
+                    Owner or manager · internet connection required
+                  </strong>
                 </span>
               </div>
             </section>
@@ -1704,12 +1800,10 @@ function Home({
                 count. Card and transfer entries record what staff entered, not
                 confirmation from a payment provider.
               </p>
-              <h3>Current development boundaries</h3>
+              <h3>Features in progress</h3>
               <p>
-                Cloud authentication and sync require configured Supabase
-                credentials and database migration. Returns, split payments,
-                unit conversions, and subscription billing are not complete. Do
-                not treat this development build as production-ready.
+                Returns, split payments, and automatic stock-unit conversions
+                are not available yet. Subscription billing remains on hold.
               </p>
             </section>
           )}
@@ -1723,6 +1817,26 @@ function Home({
               {offlineReady ? " · Offline page ready" : ""}
             </span>
           </footer>
+          {ready && (
+            <div
+              className={`account-save-status ${saveStatus?.pendingIds.length ? "pending" : ""}`}
+              role="status"
+            >
+              {syncing
+                ? "Saving your latest changes…"
+                : saveStatus?.pendingIds.length
+                  ? `${saveStatus.pendingIds.length} changes waiting to save to your account. Keep this device available.`
+                  : saveStatus?.lastSyncedAt
+                    ? "Your latest records are saved to your Shopilot account."
+                    : "Preparing your account records…"}
+              <button
+                className="text-button"
+                onClick={() => setPage("Settings")}
+              >
+                Data & recovery
+              </button>
+            </div>
+          )}
         </main>
       </div>
       <nav className="mobile-bottom-nav" aria-label="Main navigation">
@@ -2165,16 +2279,33 @@ function Home({
         <div className="modal-overlay receipt-overlay">
           <section
             className="modal receipt"
+            style={
+              {
+                "--receipt-width": `${receipt.branding?.width || workspace?.receipt_width || 80}mm`,
+              } as React.CSSProperties
+            }
             role="dialog"
             aria-modal="true"
             aria-label="Sale receipt"
           >
-            <div className="receipt-brand">{workspace?.name}</div>
-            {(workspace?.address || workspace?.phone) && (
+            {(receipt.branding?.logoUrl ?? workspace?.logo_url) && (
+              <img
+                className="receipt-logo"
+                alt={`${receipt.branding?.name || workspace?.name} logo`}
+                src={receipt.branding?.logoUrl ?? workspace?.logo_url}
+              />
+            )}
+            <div className="receipt-brand">
+              {receipt.branding?.name || workspace?.name}
+            </div>
+            {(receipt.branding?.address ||
+              receipt.branding?.phone ||
+              workspace?.address ||
+              workspace?.phone) && (
               <p>
-                {workspace.address}
+                {receipt.branding?.address ?? workspace?.address}
                 <br />
-                {workspace.phone}
+                {receipt.branding?.phone ?? workspace?.phone}
               </p>
             )}
             <p>SALE RECEIPT · DEVICE COPY</p>
@@ -2212,7 +2343,10 @@ function Home({
             <p>
               Method: {receipt.method}
               <br />
-              Thank you for shopping with us. · Powered by Shopilot
+              {receipt.branding?.footer ??
+                workspace?.receipt_footer ??
+                "Thank you for shopping with us."}{" "}
+              · Powered by Shopilot
             </p>
             <small>
               {receipt.sync === "synced"

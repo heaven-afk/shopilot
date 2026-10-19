@@ -18,6 +18,7 @@ type Props = {
   ownerName: string;
   online: boolean;
   syncing: boolean;
+  canManageStock?: boolean;
   onNavigate: (page: string) => void;
   onScan: () => void;
   onReceive: () => void;
@@ -33,6 +34,7 @@ export default function MobileDashboard({
   ownerName,
   online,
   syncing,
+  canManageStock = true,
   onNavigate,
   onScan,
   onReceive,
@@ -124,26 +126,28 @@ export default function MobileDashboard({
           <small>Outstanding balance</small>
         </button>
       </div>
-      <section className="mobile-quick-actions" aria-label="Quick actions">
-        <button onClick={onScan}>
-          <span>
-            <Camera size={23} />
-          </span>
-          Scan stock
-        </button>
-        <button onClick={onReceive}>
-          <span>
-            <ArrowDownLeft size={23} />
-          </span>
-          Receive stock
-        </button>
-        <button onClick={onProduct}>
-          <span>
-            <Package size={23} />
-          </span>
-          Add product
-        </button>
-      </section>
+      {canManageStock && (
+        <section className="mobile-quick-actions" aria-label="Quick actions">
+          <button onClick={onScan}>
+            <span>
+              <Camera size={23} />
+            </span>
+            Scan stock
+          </button>
+          <button onClick={onReceive}>
+            <span>
+              <ArrowDownLeft size={23} />
+            </span>
+            Receive stock
+          </button>
+          <button onClick={onProduct}>
+            <span>
+              <Package size={23} />
+            </span>
+            Add product
+          </button>
+        </section>
+      )}
       <button
         className={`mobile-stock-notice ${low.length ? "needs-attention" : ""}`}
         onClick={() => onNavigate("Inventory")}

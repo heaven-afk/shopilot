@@ -26,6 +26,14 @@ export type Sale = {
   customer: string;
   sync: "pending" | "synced" | "attention";
   error?: string;
+  branding?: {
+    name?: string;
+    phone?: string;
+    address?: string;
+    footer?: string;
+    width?: 58 | 80;
+    logoUrl?: string;
+  };
 };
 export type Movement = {
   id: string;

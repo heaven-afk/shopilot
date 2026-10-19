@@ -9,12 +9,16 @@ export default function PasswordField({
   creating = false,
   label = "Password",
   id = "account-password",
+  name = "password",
+  confirm = false,
 }: {
   value: string;
   onChange: (value: string) => void;
   creating?: boolean;
   label?: string;
   id?: string;
+  name?: string;
+  confirm?: boolean;
 }) {
   const [visible, setVisible] = useState(false);
   const guidance = passwordGuidance(value);
@@ -26,11 +30,13 @@ export default function PasswordField({
       <div className="password-input-wrap">
         <input
           id={id}
-          name="password"
+          name={name}
           required
           type={visible ? "text" : "password"}
-          autoComplete={creating ? "new-password" : "current-password"}
-          minLength={creating ? 8 : 1}
+          autoComplete={
+            creating || confirm ? "new-password" : "current-password"
+          }
+          minLength={creating || confirm ? 8 : 1}
           value={value}
           onChange={update}
           onInput={update}

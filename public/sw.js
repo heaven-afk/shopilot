@@ -1,4 +1,4 @@
-const CACHE = "shopilot-shell-v5-save-messages";
+const CACHE = "shopilot-shell-v6-team-recovery";
 self.addEventListener("install", (event) => {
   self.skipWaiting();
 });
@@ -48,13 +48,13 @@ self.addEventListener("fetch", (event) => {
         .then((response) => {
           if (response.ok) {
             const copy = response.clone();
-            caches.open(CACHE).then((cache) => cache.put("/", copy));
+            caches.open(CACHE).then((cache) => cache.put(url.pathname, copy));
           }
           return response;
         })
         .catch(() =>
           caches
-            .match("/")
+            .match(url.pathname)
             .then(
               (response) =>
                 response ||

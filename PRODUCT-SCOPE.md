@@ -6,6 +6,8 @@ Implementation milestone: initial local application, offline shell/storage, prod
 
 Owner entry flow updated: explicit sign-in/account creation, email confirmation, business onboarding (name/type/phone/address), private empty dashboard after setup, returning business restoration, and sign-out. Dashboard access requires an account/business; old device-only QA records are isolated from the owner flow. Supabase configuration is required to use registration.
 
+Admin/team/recovery upgrade: private platform roles/dashboard, email-bound staff invitation links, owner/manager/staff write permissions, business/receipt settings, branded sale snapshots, dedicated recovery UX, persistent-storage request, pending-save metadata, immediate nonblocking uploads, and business-bound backup restore are implemented in source. Production activation requires migrations 003–005 and privileged owner bootstrap. Billing and subscription entitlements are explicitly on hold. Browser eviction of unsynced work remains an inherent risk; the app mitigates it and reports pending work rather than promising permanent device storage.
+
 ## Customers and purpose
 
 General small shops, retailers, and wholesalers, initially in Nigeria. Help owners manage stock, sales, customer credit, and business performance. Large supermarkets, mall management, and external retail POS integrations are excluded from this product's initial scope.

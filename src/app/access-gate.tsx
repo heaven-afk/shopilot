@@ -12,6 +12,7 @@ import { getSupabase } from "../lib/supabase";
 import { setStorageScope } from "../lib/storage";
 import type { Workspace } from "./cloud-settings";
 import PasswordField from "./password-field";
+import type { Invitation } from "../lib/contracts";
 type Access = {
   workspace: Workspace;
   userId: string;
@@ -19,16 +20,30 @@ type Access = {
   ownerName: string;
 };
 const CACHE = "shopilot-authorised-business-v1";
-const fields = "id,name,business_type,phone,address";
+const fields =
+  "id,name,business_type,phone,address,receipt_footer,receipt_width,logo_url";
 export default function AccessGate({
   children,
 }: {
   children: (access: Access, onExit: () => Promise<void>) => ReactNode;
 }) {
   const [view, setView] = useState<
-    "loading" | "login" | "signup" | "confirm" | "setup" | "recovery"
+    | "loading"
+    | "login"
+    | "signup"
+    | "confirm"
+    | "setup"
+    | "recovery"
+    | "forgot"
+    | "reset-sent"
+    | "invitations"
+    | "choose-business"
   >("loading");
   const [access, setAccess] = useState<Access | null>(null);
+  const [invitations, setInvitations] = useState<Invitation[]>([]),
+    [businesses, setBusinesses] = useState<Workspace[]>([]),
+    [confirmation, setConfirmation] = useState("");
+  const recoveryMode = useRef(false);
   const [email, setEmail] = useState(""),
     [password, setPassword] = useState(""),
     [ownerName, setOwnerName] = useState("");
@@ -40,6 +55,57 @@ export default function AccessGate({
     [busy, setBusy] = useState(false);
   const client = getSupabase(),
     generation = useRef(0);
+  async function openBusiness(
+    business: Workspace,
+    session?: Session,
+    revision?: number,
+  ) {
+    const activeSession =
+      session || (await client!.auth.getSession()).data.session;
+    if (!activeSession) throw new Error("Please sign in again.");
+    const role = await client!
+      .from("memberships")
+      .select("role")
+      .eq("business_id", business.id)
+      .eq("user_id", activeSession.user.id)
+      .maybeSingle();
+    if (role.error || !role.data)
+      throw new Error("This account no longer has access to this business.");
+    if (
+      recoveryMode.current ||
+      (revision !== undefined && revision !== generation.current)
+    )
+      return;
+    const next: Access = {
+      workspace: { ...business, role: role.data.role },
+      userId: activeSession.user.id,
+      email: activeSession.user.email || "",
+      ownerName:
+        activeSession.user.user_metadata?.owner_name ||
+        activeSession.user.email?.split("@")[0] ||
+        "Business owner",
+    };
+    setStorageScope(next.workspace.id);
+    localStorage.setItem(CACHE, JSON.stringify(next));
+    setAccess(next);
+    setPassword("");
+  }
+  async function acceptInvite(id: string) {
+    if (!client) return;
+    setBusy(true);
+    setMessage("");
+    try {
+      const result = await client.rpc("accept_staff_invitation", {
+        invitation_id: id,
+      });
+      if (result.error) throw result.error;
+      window.location.assign("/?choose=business");
+    } catch (e) {
+      setMessage((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
   useEffect(() => {
     if ("serviceWorker" in navigator && process.env.NODE_ENV === "production") {
       navigator.serviceWorker
@@ -55,8 +121,13 @@ export default function AccessGate({
       return;
     }
     let alive = true;
+    if (window.location.hash.includes("type=recovery")) {
+      recoveryMode.current = true;
+      setView("recovery");
+    }
     async function restore(session: Session | null) {
       const revision = ++generation.current;
+      if (recoveryMode.current) return;
       if (!session) {
         if (alive) {
           setAccess(null);
@@ -83,33 +154,71 @@ export default function AccessGate({
             "Connect to the internet to prepare this business on this device.",
           );
         }
-        const { data, error } = await client!
+        if (
+          new URLSearchParams(window.location.search).get("next") === "/admin"
+        ) {
+          window.location.replace("/admin");
+          return;
+        }
+        let { data, error } = await client!
           .from("businesses")
           .select(fields)
-          .limit(1)
-          .abortSignal(AbortSignal.timeout(15000))
-          .maybeSingle();
+          .order("name")
+          .limit(100)
+          .abortSignal(AbortSignal.timeout(15000));
+        if (error && (error.code === "42703" || error.code === "PGRST204")) {
+          const legacy = await client!
+            .from("businesses")
+            .select("id,name,business_type,phone,address")
+            .order("name")
+            .limit(100);
+          data = legacy.data as typeof data;
+          error = legacy.error;
+        }
         if (error) throw error;
-        if (!alive || generation.current !== revision) return;
-        if (!data) {
+        if (!alive || generation.current !== revision || recoveryMode.current)
+          return;
+        const choices = (data || []) as Workspace[];
+        setBusinesses(choices);
+        const invites = await client!.rpc("my_invitations");
+        if (!alive || generation.current !== revision || recoveryMode.current)
+          return;
+        setInvitations(invites.data || []);
+        if (
+          (invites.data?.length || 0) > 0 &&
+          (!choices.length ||
+            new URLSearchParams(window.location.search).has("invite"))
+        ) {
+          setView("invitations");
+          return;
+        }
+        if (!choices.length) {
+          const platform = await client!.rpc("platform_access");
+          if (platform.data) {
+            window.location.replace("/admin");
+            return;
+          }
           setAccess(null);
           setView("setup");
           return;
         }
-        const next: Access = {
-          workspace: data as Workspace,
-          userId: session.user.id,
-          email: session.user.email || "",
-          ownerName:
-            session.user.user_metadata?.owner_name ||
-            session.user.email?.split("@")[0] ||
-            "Business owner",
-        };
-        setStorageScope(next.workspace.id);
-        localStorage.setItem(CACHE, JSON.stringify(next));
-        setAccess(next);
-        setView("login");
-        setPassword("");
+        const cached = JSON.parse(
+          localStorage.getItem(CACHE) || "null",
+        ) as Access | null;
+        if (
+          new URLSearchParams(window.location.search).has("choose") ||
+          (choices.length > 1 &&
+            !choices.some((b) => b.id === cached?.workspace.id))
+        ) {
+          setAccess(null);
+          setView("choose-business");
+          return;
+        }
+        await openBusiness(
+          choices.find((b) => b.id === cached?.workspace.id) || choices[0],
+          session,
+          revision,
+        );
       } catch (e) {
         if (alive && generation.current === revision) {
           setAccess(null);
@@ -122,12 +231,24 @@ export default function AccessGate({
       .getSession()
       .then(({ data, error }) => {
         if (error) throw error;
+        if (recoveryMode.current && !data.session) {
+          recoveryMode.current = false;
+          setView("forgot");
+          setMessage(
+            "This reset link is no longer valid. Request a new link below.",
+          );
+          return;
+        }
         return restore(data.session);
       })
       .catch(() => {
         if (alive) {
-          setView("login");
-          setMessage("Please sign in again to open your business.");
+          setView(recoveryMode.current ? "forgot" : "login");
+          setMessage(
+            recoveryMode.current
+              ? "This reset link is no longer valid. Request a new link below."
+              : "Please sign in again to open your business.",
+          );
         }
       });
     const {
@@ -135,6 +256,8 @@ export default function AccessGate({
     } = client.auth.onAuthStateChange((event, session) => {
       if (event === "INITIAL_SESSION" || event === "TOKEN_REFRESHED") return;
       if (event === "PASSWORD_RECOVERY") {
+        recoveryMode.current = true;
+        generation.current++;
         setAccess(null);
         setView("recovery");
         return;
@@ -143,10 +266,14 @@ export default function AccessGate({
         if (alive) restore(session);
       }, 0);
     });
+    const reconnect = () =>
+      client.auth.getSession().then(({ data }) => restore(data.session));
+    window.addEventListener("online", reconnect);
     return () => {
       alive = false;
       subscription.unsubscribe();
       generation.current++;
+      window.removeEventListener("online", reconnect);
     };
   }, [client]);
   async function authenticate(event: React.FormEvent<HTMLFormElement>) {
@@ -214,6 +341,10 @@ export default function AccessGate({
           business_type: details.type,
           phone: details.phone,
           address: details.address,
+          role: "owner",
+          receipt_width: 80,
+          receipt_footer: "Thank you for shopping with us.",
+          logo_url: "",
         },
         userId: session.user.id,
         email: session.user.email || "",
@@ -237,17 +368,23 @@ export default function AccessGate({
       }
     }
     generation.current++;
+    recoveryMode.current = false;
     localStorage.removeItem(CACHE);
     setStorageScope(null);
     setAccess(null);
     setPassword("");
     setView("login");
   }
-  async function resetPassword() {
+  async function resetPassword(event?: React.FormEvent<HTMLFormElement>) {
+    event?.preventDefault();
     const enteredEmail =
+      (event
+        ? String(new FormData(event.currentTarget).get("email") || "").trim()
+        : "") ||
       (
         document.getElementById("account-email") as HTMLInputElement | null
-      )?.value.trim() || email.trim();
+      )?.value.trim() ||
+      email.trim();
     if (!client || !enteredEmail) {
       setMessage("Enter your account email first.");
       return;
@@ -261,6 +398,7 @@ export default function AccessGate({
       setMessage(
         "If an account exists for this email, you will receive a password reset link.",
       );
+      setView("reset-sent");
     } catch (e) {
       setMessage((e as Error).message);
     } finally {
@@ -273,6 +411,15 @@ export default function AccessGate({
     const submittedPassword = String(
       new FormData(event.currentTarget).get("password") || "",
     );
+    if (
+      submittedPassword !==
+      String(new FormData(event.currentTarget).get("confirmPassword") || "")
+    ) {
+      setMessage(
+        "The passwords don’t match. Please enter the same new password twice.",
+      );
+      return;
+    }
     setBusy(true);
     try {
       const { error } = await client.auth.updateUser({
@@ -350,7 +497,15 @@ export default function AccessGate({
                       ? "Check your inbox"
                       : view === "recovery"
                         ? "Choose a new password"
-                        : "Welcome back."}
+                        : view === "forgot"
+                          ? "Reset your password"
+                          : view === "reset-sent"
+                            ? "Check your inbox"
+                            : view === "invitations"
+                              ? "Join your team"
+                              : view === "choose-business"
+                                ? "Choose your business"
+                                : "Welcome back."}
               </h2>
               <p>
                 {view === "signup"
@@ -361,7 +516,15 @@ export default function AccessGate({
                       ? `We sent a confirmation link to ${email}. Confirm your email, then sign in to set up your business.`
                       : view === "recovery"
                         ? "Choose a unique password you don’t use on another account."
-                        : "Sign in to pick up where your business left off."}
+                        : view === "forgot"
+                          ? "Enter your account email. We’ll send a link to help you get back in."
+                          : view === "reset-sent"
+                            ? "If this email has an account, a reset link is on its way. Check your inbox and spam folder."
+                            : view === "invitations"
+                              ? "Accept an invitation to access your business’s records."
+                              : view === "choose-business"
+                                ? "Open a business you belong to, or review your invitations."
+                                : "Sign in to pick up where your business left off."}
               </p>
               {message && (
                 <div className="banner" role="status">
@@ -424,7 +587,10 @@ export default function AccessGate({
                         className="text-button forgot"
                         type="button"
                         disabled={!client || busy}
-                        onClick={resetPassword}
+                        onClick={() => {
+                          setView("forgot");
+                          setMessage("");
+                        }}
                       >
                         Forgot password?
                       </button>
@@ -552,11 +718,117 @@ export default function AccessGate({
                     value={password}
                     onChange={setPassword}
                   />
+                  <PasswordField
+                    id="confirm-password"
+                    name="confirmPassword"
+                    confirm
+                    label="Confirm new password"
+                    value={confirmation}
+                    onChange={setConfirmation}
+                  />
                   <button className="button primary full" disabled={busy}>
                     Update password
                   </button>
                 </form>
               )}
+              <div className="access-extra-flows">
+                {view === "forgot" && (
+                  <form onSubmit={resetPassword}>
+                    <label>
+                      Account email
+                      <input
+                        type="email"
+                        name="email"
+                        required
+                        autoComplete="email"
+                        inputMode="email"
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                      />
+                    </label>
+                    <button
+                      className="button primary full"
+                      disabled={busy || !client}
+                    >
+                      {busy ? "Sending…" : "Send reset link"}
+                    </button>
+                    <button
+                      className="text-button"
+                      type="button"
+                      onClick={() => {
+                        setView("login");
+                        setMessage("");
+                      }}
+                    >
+                      Back to sign in
+                    </button>
+                  </form>
+                )}
+                {view === "reset-sent" && (
+                  <button
+                    className="button secondary full"
+                    onClick={() => {
+                      setView("login");
+                      setMessage("");
+                    }}
+                  >
+                    Back to sign in
+                  </button>
+                )}
+                {(view === "choose-business" || view === "invitations") && (
+                  <>
+                    <div className="business-choices">
+                      {view === "choose-business" &&
+                        businesses.map((b) => (
+                          <button
+                            key={b.id}
+                            className="button secondary full"
+                            disabled={busy}
+                            onClick={() => {
+                              setBusy(true);
+                              openBusiness(b)
+                                .catch((e) => setMessage(e.message))
+                                .finally(() => setBusy(false));
+                            }}
+                          >
+                            {b.name}
+                            <ArrowRight size={17} />
+                          </button>
+                        ))}
+                      {invitations.map((i) => (
+                        <div className="invitation-choice" key={i.id}>
+                          <strong>{i.businessName}</strong>
+                          <p>
+                            Invited as {i.role} · expires{" "}
+                            {new Date(i.expiresAt).toLocaleDateString("en-NG")}
+                          </p>
+                          <button
+                            className="button primary full"
+                            disabled={busy}
+                            onClick={() => acceptInvite(i.id)}
+                          >
+                            Accept invitation
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                    {view === "invitations" && businesses.length > 0 && (
+                      <button
+                        className="text-button"
+                        onClick={() => setView("choose-business")}
+                      >
+                        Open an existing business
+                      </button>
+                    )}
+                    <button
+                      className="text-button"
+                      onClick={() => exit().catch((e) => setMessage(e.message))}
+                    >
+                      Sign out
+                    </button>
+                  </>
+                )}
+              </div>
               <div className="access-trust">
                 <ShieldCheck size={14} /> Your business. Your private workspace.
               </div>
