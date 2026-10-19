@@ -7,7 +7,6 @@ import {
   Package,
   ShieldCheck,
   ShoppingBag,
-  Sparkles,
 } from "lucide-react";
 import { getSupabase } from "../lib/supabase";
 import { setStorageScope } from "../lib/storage";
@@ -299,9 +298,7 @@ export default function AccessGate({
           shopilot<span className="brand-dot">.</span>
         </a>
         <div className="access-story-body">
-          <span className="access-tag">
-            <Sparkles size={14} /> A CLEARER WAY TO RUN YOUR SHOP
-          </span>
+          <span className="access-tag">A CLEARER WAY TO RUN YOUR SHOP</span>
           <h1>
             Your business. <br />
             Ready for its <br />

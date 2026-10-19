@@ -18,7 +18,7 @@ import {
   Settings,
   ShoppingBag,
   ShoppingCart,
-  Sparkles,
+  Menu,
   TrendingUp,
   Users,
   Wifi,
@@ -46,6 +46,8 @@ import {
 import { getSupabase } from "../lib/supabase";
 import CloudSettings, { type Workspace } from "./cloud-settings";
 import AccessGate from "./access-gate";
+import MobileDashboard from "./mobile-dashboard";
+import { MobileSales, MobileProducts } from "./mobile-records";
 
 type ScanRow = {
   name: string;
@@ -59,7 +61,7 @@ const navigation = [
   ["Inventory", Package],
   ["Sales history", BarChart3],
   ["Customers & credit", Users],
-  ["Business insights", Sparkles],
+  ["Business insights", TrendingUp],
 ] as const;
 const date = (value: string) =>
   new Date(value).toLocaleString("en-NG", {
@@ -131,8 +133,24 @@ function Home({
     ),
     [syncing, setSyncing] = useState(false);
   const workspaceRef = useRef<Workspace | null>(initialWorkspace);
+  const [mobileMore, setMobileMore] = useState(false);
+  function navigateMobile(next: string) {
+    setPage(next);
+    setSearch("");
+    setError("");
+    setMobileMore(false);
+    window.scrollTo({ top: 0, behavior: "instant" });
+  }
   useEffect(() => {
-    if (!modal && !receipt) return;
+    const query = window.matchMedia("(min-width: 761px)");
+    const close = () => {
+      if (query.matches) setMobileMore(false);
+    };
+    query.addEventListener("change", close);
+    return () => query.removeEventListener("change", close);
+  }, []);
+  useEffect(() => {
+    if (!modal && !receipt && !mobileMore) return;
     const previous = document.activeElement as HTMLElement | null;
     const dialog = document.querySelector<HTMLElement>('[role="dialog"]');
     const focusable = () =>
@@ -146,6 +164,7 @@ function Home({
       if (event.key === "Escape") {
         setModal(null);
         setReceipt(null);
+        setMobileMore(false);
       }
       if (event.key !== "Tab") return;
       const elements = focusable();
@@ -166,7 +185,7 @@ function Home({
       document.removeEventListener("keydown", onKey);
       previous?.focus();
     };
-  }, [modal, receipt]);
+  }, [modal, receipt, mobileMore]);
   useEffect(() => {
     if (!ready) return;
     readPhoto()
@@ -624,78 +643,81 @@ function Home({
     }
   }
   const saleTable = (sales: Sale[]) => (
-    <div className="table-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th>Transaction / customer</th>
-            <th>Date</th>
-            <th>Amount</th>
-            <th>Payment</th>
-            <th>Status</th>
-            <th />
-          </tr>
-        </thead>
-        <tbody>
-          {sales.length ? (
-            sales.map((s) => (
-              <tr key={s.id}>
-                <td>
-                  <strong>SP-{s.id.slice(0, 8).toUpperCase()}</strong>
-                  <small>
-                    {s.customer || "Walk-in customer"} · {s.lines.length} item
-                    {s.lines.length === 1 ? "" : "s"}
-                  </small>
-                </td>
-                <td>{date(s.createdAt)}</td>
-                <td>
-                  <strong>{money(s.total)}</strong>
-                </td>
-                <td>{s.method}</td>
-                <td>
-                  <span
-                    className={
-                      "badge " +
-                      (paidFor(state, s) === s.total ? "green" : "amber")
-                    }
-                  >
-                    {paidFor(state, s) === s.total
-                      ? "Paid"
-                      : paidFor(state, s)
-                        ? "Part paid"
-                        : "Unpaid"}
-                  </span>
-                  <small>
-                    {s.sync === "synced" ? "Synced" : "Pending sync"}
-                  </small>
-                </td>
-                <td>
-                  <button
-                    className="icon-btn"
-                    aria-label="View receipt"
-                    onClick={() => setReceipt(s)}
-                  >
-                    <ChevronRight size={17} />
-                  </button>
+    <div className="responsive-sales">
+      <MobileSales sales={sales} state={state} onReceipt={setReceipt} />
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Transaction / customer</th>
+              <th>Date</th>
+              <th>Amount</th>
+              <th>Payment</th>
+              <th>Status</th>
+              <th />
+            </tr>
+          </thead>
+          <tbody>
+            {sales.length ? (
+              sales.map((s) => (
+                <tr key={s.id}>
+                  <td>
+                    <strong>SP-{s.id.slice(0, 8).toUpperCase()}</strong>
+                    <small>
+                      {s.customer || "Walk-in customer"} · {s.lines.length} item
+                      {s.lines.length === 1 ? "" : "s"}
+                    </small>
+                  </td>
+                  <td>{date(s.createdAt)}</td>
+                  <td>
+                    <strong>{money(s.total)}</strong>
+                  </td>
+                  <td>{s.method}</td>
+                  <td>
+                    <span
+                      className={
+                        "badge " +
+                        (paidFor(state, s) === s.total ? "green" : "amber")
+                      }
+                    >
+                      {paidFor(state, s) === s.total
+                        ? "Paid"
+                        : paidFor(state, s)
+                          ? "Part paid"
+                          : "Unpaid"}
+                    </span>
+                    <small>
+                      {s.sync === "synced" ? "Synced" : "Pending sync"}
+                    </small>
+                  </td>
+                  <td>
+                    <button
+                      className="icon-btn"
+                      aria-label="View receipt"
+                      onClick={() => setReceipt(s)}
+                    >
+                      <ChevronRight size={17} />
+                    </button>
+                  </td>
+                </tr>
+              ))
+            ) : (
+              <tr>
+                <td colSpan={6}>
+                  <div className="empty">
+                    Your first sale starts the story.
+                    <small>Record a sale to see transactions here.</small>
+                  </div>
                 </td>
               </tr>
-            ))
-          ) : (
-            <tr>
-              <td colSpan={6}>
-                <div className="empty">
-                  Your first sale starts the story.
-                  <small>Record a sale to see transactions here.</small>
-                </div>
-              </td>
-            </tr>
-          )}
-        </tbody>
-      </table>
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
   return (
-    <div className="shell">
+    <div className={`shell ${page === "Overview" ? "is-overview" : ""}`}>
       <aside className="sidebar">
         <a className="brand" href="/">
           <span className="brand-icon">
@@ -742,7 +764,7 @@ function Home({
         <div className="sidebar-bottom">
           <div className="tip">
             <span className="tip-icon">
-              <Sparkles size={18} />
+              <TrendingUp size={18} />
             </span>
             <strong>A little clarity. More growth.</strong>
             <p>Your next business decision starts with better records.</p>
@@ -775,6 +797,25 @@ function Home({
         </div>
       </aside>
       <div className="main-shell">
+        <header className="mobile-header">
+          <div className="mobile-store">
+            <span className="mobile-store-mark">
+              <ShoppingBag size={21} />
+            </span>
+            <div>
+              <span>SHOPILOT</span>
+              <strong>{initialWorkspace.name}</strong>
+            </div>
+          </div>
+          <button
+            className="mobile-account"
+            aria-label="Open business menu"
+            aria-expanded={mobileMore}
+            onClick={() => setMobileMore(true)}
+          >
+            {ownerName.trim().slice(0, 2).toUpperCase()}
+          </button>
+        </header>
         <header className="topbar">
           <div className="breadcrumb">
             Workspace <ChevronRight size={14} />
@@ -851,6 +892,24 @@ function Home({
             </div>
           </div>
           {!ready && <div className="banner">Preparing device storage…</div>}
+          {page === "Record sale" && Object.keys(cart).length > 0 && (
+            <button
+              className="mobile-cart-summary"
+              onClick={() =>
+                document
+                  .getElementById("sale-checkout")
+                  ?.scrollIntoView({ behavior: "smooth", block: "start" })
+              }
+            >
+              <ShoppingCart size={19} />
+              <span>
+                {Object.keys(cart).length} products · {money(total)}
+              </span>
+              <strong>
+                Review sale <ChevronRight size={16} />
+              </strong>
+            </button>
+          )}
           {error && (
             <div className="banner error" role="alert">
               {error}
@@ -872,244 +931,262 @@ function Home({
           )}
           {page === "Overview" && (
             <>
-              <div className="period-row">
-                <span>
-                  <span className="live-dot" /> Today’s overview
-                </span>
-                <span>
-                  {new Date().toLocaleDateString("en-NG", {
-                    timeZone: "Africa/Lagos",
-                    weekday: "long",
-                    day: "numeric",
-                    month: "long",
-                    year: "numeric",
-                  })}
-                </span>
-              </div>
-              <div className="stats">
-                {[
-                  {
-                    label: "Sales today",
-                    value: money(revenue),
-                    note: `${salesToday.length} recorded transactions`,
-                    icon: ShoppingCart,
-                  },
-                  {
-                    label: "Money collected today",
-                    value: money(collected),
-                    note: "Includes customer debt repayments",
-                    icon: ArrowDownLeft,
-                  },
-                  {
-                    label: "Inventory value",
-                    value: money(
-                      state.products.reduce((s, p) => s + p.stock * p.cost, 0),
-                    ),
-                    note: `${state.products.length} products in your catalogue`,
-                    icon: Package,
-                  },
-                  {
-                    label: "Outstanding credit",
-                    value: money(debt),
-                    note: `${state.sales.filter((s) => paidFor(state, s) < s.total).length} sales awaiting payment`,
-                    icon: Users,
-                  },
-                ].map(({ label, value, note, icon: Icon }) => (
-                  <section className="stat" key={label}>
-                    <div className="stat-label">
-                      {label}
-                      <span>
-                        <Icon size={17} />
-                      </span>
-                    </div>
-                    <div className="stat-value">{value}</div>
-                    <small>{note}</small>
-                  </section>
-                ))}
-              </div>
-              <div className="overview-grid">
-                <section className="panel sales-panel">
-                  <div className="panel-heading">
-                    <div>
-                      <h2>Sales at a glance</h2>
-                      <p>Your last 7 days of recorded sales</p>
-                    </div>
-                    <span className="subtle-label">Sales value · ₦</span>
-                  </div>
-                  {state.sales.length ? (
-                    <div className="chart">
-                      {Array.from({ length: 7 }, (_, i) => {
-                        const d = new Date();
-                        d.setDate(d.getDate() - 6 + i);
-                        const key = today(d.toISOString()),
-                          value = state.sales
-                            .filter((s) => today(s.createdAt) === key)
-                            .reduce((sum, s) => sum + s.total, 0),
-                          max = Math.max(
-                            1,
-                            ...Array.from({ length: 7 }, (_, j) => {
-                              const x = new Date();
-                              x.setDate(x.getDate() - 6 + j);
-                              return state.sales
-                                .filter(
-                                  (s) =>
-                                    today(s.createdAt) ===
-                                    today(x.toISOString()),
-                                )
-                                .reduce((sum, s) => sum + s.total, 0);
-                            }),
-                          );
-                        return (
-                          <div className="chart-column" key={i}>
-                            <span>{value ? money(value) : ""}</span>
-                            <div className="chart-track">
-                              <div
-                                style={{
-                                  height: `${Math.max((value / max) * 100, 1)}%`,
-                                }}
-                              />
-                            </div>
-                            <small>
-                              {d.toLocaleDateString("en-NG", {
-                                weekday: "short",
-                              })}
-                            </small>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    <div className="chart-empty">
-                      <div className="chart-grid" />
-                      <span className="empty-icon">
-                        <TrendingUp size={29} />
-                      </span>
-                      <h3>Good records lead to good decisions.</h3>
-                      <p>Your sales trend will appear after your first sale.</p>
-                      <button
-                        className="text-button"
-                        onClick={() => setPage("Record sale")}
-                      >
-                        Record your first sale <ArrowUpRight size={15} />
-                      </button>
-                    </div>
-                  )}
-                  <div className="panel-footer">
-                    <span>Gross profit today</span>
-                    <strong>
-                      {money(
-                        salesToday.reduce(
-                          (sum, s) =>
-                            sum +
-                            s.lines.reduce(
-                              (a, l) => a + (l.price - l.cost) * l.quantity,
-                              0,
-                            ),
+              <MobileDashboard
+                state={state}
+                ownerName={ownerName}
+                online={online}
+                syncing={syncing}
+                onNavigate={navigateMobile}
+                onScan={() => setModal("scan")}
+                onReceive={() => setModal("receive")}
+                onProduct={() => setModal("product")}
+                onReceipt={setReceipt}
+              />
+              <div className="desktop-overview">
+                <div className="period-row">
+                  <span>
+                    <span className="live-dot" /> Today’s overview
+                  </span>
+                  <span>
+                    {new Date().toLocaleDateString("en-NG", {
+                      timeZone: "Africa/Lagos",
+                      weekday: "long",
+                      day: "numeric",
+                      month: "long",
+                      year: "numeric",
+                    })}
+                  </span>
+                </div>
+                <div className="stats">
+                  {[
+                    {
+                      label: "Sales today",
+                      value: money(revenue),
+                      note: `${salesToday.length} recorded transactions`,
+                      icon: ShoppingCart,
+                    },
+                    {
+                      label: "Money collected today",
+                      value: money(collected),
+                      note: "Includes customer debt repayments",
+                      icon: ArrowDownLeft,
+                    },
+                    {
+                      label: "Inventory value",
+                      value: money(
+                        state.products.reduce(
+                          (s, p) => s + p.stock * p.cost,
                           0,
                         ),
-                      )}
-                    </strong>
-                    <small>Before business expenses</small>
-                  </div>
-                </section>
-                <section className="insight-card">
-                  <span className="insight-kicker">
-                    <Sparkles size={16} /> SHOPILOT INSIGHTS
-                  </span>
-                  <h2>
-                    A small step.
-                    <br />A smarter business.
-                  </h2>
-                  <p>
-                    {state.products.length
-                      ? low.length
-                        ? `${low.length} product${low.length === 1 ? " is" : "s are"} at or below the low-stock threshold. Check what needs replenishing.`
-                        : "Your stock is above its alert levels. Keep recording sales to uncover more useful patterns."
-                      : "Add your products and opening stock. We’ll help you spot what sells, what’s running low, and where to grow."}
-                  </p>
-                  <button
-                    onClick={() =>
-                      state.products.length
-                        ? setPage("Business insights")
-                        : setModal("product")
-                    }
-                  >
-                    {state.products.length
-                      ? "View business insights"
-                      : "Add your first product"}
-                    <ArrowUpRight size={18} />
-                  </button>
-                  <div className="insight-art">
-                    <div />
-                    <div />
-                    <div />
-                    <TrendingUp size={58} />
-                  </div>
-                  <span className="insight-foot">
-                    Built on your data. Reviewed by you.
-                  </span>
-                </section>
-              </div>
-              <div className="overview-bottom">
-                <section className="panel">
-                  <div className="panel-heading">
-                    <div>
-                      <h2>Recent transactions</h2>
-                      <p>A quick look at your latest sales</p>
-                    </div>
-                    <button
-                      className="text-button"
-                      onClick={() => setPage("Sales history")}
-                    >
-                      View all <ArrowUpRight size={15} />
-                    </button>
-                  </div>
-                  {saleTable(state.sales.slice(0, 4))}
-                </section>
-                <section className="panel stock-alerts">
-                  <div className="panel-heading">
-                    <div>
-                      <h2>Stock watch</h2>
-                      <p>A little attention goes a long way</p>
-                    </div>
-                    <span className="badge amber">{low.length} low</span>
-                  </div>
-                  {low.length ? (
-                    low.slice(0, 4).map((p) => (
-                      <div className="stock-watch-row" key={p.id}>
-                        <span className="product-icon">
-                          <Box size={19} />
+                      ),
+                      note: `${state.products.length} products in your catalogue`,
+                      icon: Package,
+                    },
+                    {
+                      label: "Outstanding credit",
+                      value: money(debt),
+                      note: `${state.sales.filter((s) => paidFor(state, s) < s.total).length} sales awaiting payment`,
+                      icon: Users,
+                    },
+                  ].map(({ label, value, note, icon: Icon }) => (
+                    <section className="stat" key={label}>
+                      <div className="stat-label">
+                        {label}
+                        <span>
+                          <Icon size={17} />
                         </span>
-                        <div>
-                          <strong>{p.name}</strong>
-                          <small>
-                            {p.stock} {p.unit} left · alert at {p.threshold}
-                          </small>
-                        </div>
                       </div>
-                    ))
-                  ) : (
-                    <div className="stock-clear">
-                      <Check size={23} />
-                      <strong>
-                        {state.products.length
-                          ? "Stock levels look good"
-                          : "A fresh start for your stock"}
-                      </strong>
-                      <p>
-                        {state.products.length
-                          ? "No products below their alert threshold."
-                          : "Add products to keep an eye on your inventory."}
-                      </p>
+                      <div className="stat-value">{value}</div>
+                      <small>{note}</small>
+                    </section>
+                  ))}
+                </div>
+                <div className="overview-grid">
+                  <section className="panel sales-panel">
+                    <div className="panel-heading">
+                      <div>
+                        <h2>Sales at a glance</h2>
+                        <p>Your last 7 days of recorded sales</p>
+                      </div>
+                      <span className="subtle-label">Sales value · ₦</span>
                     </div>
-                  )}
-                  <button
-                    className="stock-link"
-                    onClick={() => setPage("Inventory")}
-                  >
-                    Open inventory <ChevronRight size={16} />
-                  </button>
-                </section>
+                    {state.sales.length ? (
+                      <div className="chart">
+                        {Array.from({ length: 7 }, (_, i) => {
+                          const d = new Date();
+                          d.setDate(d.getDate() - 6 + i);
+                          const key = today(d.toISOString()),
+                            value = state.sales
+                              .filter((s) => today(s.createdAt) === key)
+                              .reduce((sum, s) => sum + s.total, 0),
+                            max = Math.max(
+                              1,
+                              ...Array.from({ length: 7 }, (_, j) => {
+                                const x = new Date();
+                                x.setDate(x.getDate() - 6 + j);
+                                return state.sales
+                                  .filter(
+                                    (s) =>
+                                      today(s.createdAt) ===
+                                      today(x.toISOString()),
+                                  )
+                                  .reduce((sum, s) => sum + s.total, 0);
+                              }),
+                            );
+                          return (
+                            <div className="chart-column" key={i}>
+                              <span>{value ? money(value) : ""}</span>
+                              <div className="chart-track">
+                                <div
+                                  style={{
+                                    height: `${Math.max((value / max) * 100, 1)}%`,
+                                  }}
+                                />
+                              </div>
+                              <small>
+                                {d.toLocaleDateString("en-NG", {
+                                  weekday: "short",
+                                })}
+                              </small>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <div className="chart-empty">
+                        <div className="chart-grid" />
+                        <span className="empty-icon">
+                          <TrendingUp size={29} />
+                        </span>
+                        <h3>Good records lead to good decisions.</h3>
+                        <p>
+                          Your sales trend will appear after your first sale.
+                        </p>
+                        <button
+                          className="text-button"
+                          onClick={() => setPage("Record sale")}
+                        >
+                          Record your first sale <ArrowUpRight size={15} />
+                        </button>
+                      </div>
+                    )}
+                    <div className="panel-footer">
+                      <span>Gross profit today</span>
+                      <strong>
+                        {money(
+                          salesToday.reduce(
+                            (sum, s) =>
+                              sum +
+                              s.lines.reduce(
+                                (a, l) => a + (l.price - l.cost) * l.quantity,
+                                0,
+                              ),
+                            0,
+                          ),
+                        )}
+                      </strong>
+                      <small>Before business expenses</small>
+                    </div>
+                  </section>
+                  <section className="insight-card">
+                    <span className="insight-kicker">
+                      <TrendingUp size={16} /> SHOPILOT INSIGHTS
+                    </span>
+                    <h2>
+                      A small step.
+                      <br />A smarter business.
+                    </h2>
+                    <p>
+                      {state.products.length
+                        ? low.length
+                          ? `${low.length} product${low.length === 1 ? " is" : "s are"} at or below the low-stock threshold. Check what needs replenishing.`
+                          : "Your stock is above its alert levels. Keep recording sales to uncover more useful patterns."
+                        : "Add your products and opening stock. We’ll help you spot what sells, what’s running low, and where to grow."}
+                    </p>
+                    <button
+                      onClick={() =>
+                        state.products.length
+                          ? setPage("Business insights")
+                          : setModal("product")
+                      }
+                    >
+                      {state.products.length
+                        ? "View business insights"
+                        : "Add your first product"}
+                      <ArrowUpRight size={18} />
+                    </button>
+                    <div className="insight-art">
+                      <div />
+                      <div />
+                      <div />
+                      <TrendingUp size={58} />
+                    </div>
+                    <span className="insight-foot">
+                      Built on your data. Reviewed by you.
+                    </span>
+                  </section>
+                </div>
+                <div className="overview-bottom">
+                  <section className="panel">
+                    <div className="panel-heading">
+                      <div>
+                        <h2>Recent transactions</h2>
+                        <p>A quick look at your latest sales</p>
+                      </div>
+                      <button
+                        className="text-button"
+                        onClick={() => setPage("Sales history")}
+                      >
+                        View all <ArrowUpRight size={15} />
+                      </button>
+                    </div>
+                    {saleTable(state.sales.slice(0, 4))}
+                  </section>
+                  <section className="panel stock-alerts">
+                    <div className="panel-heading">
+                      <div>
+                        <h2>Stock watch</h2>
+                        <p>A little attention goes a long way</p>
+                      </div>
+                      <span className="badge amber">{low.length} low</span>
+                    </div>
+                    {low.length ? (
+                      low.slice(0, 4).map((p) => (
+                        <div className="stock-watch-row" key={p.id}>
+                          <span className="product-icon">
+                            <Box size={19} />
+                          </span>
+                          <div>
+                            <strong>{p.name}</strong>
+                            <small>
+                              {p.stock} {p.unit} left · alert at {p.threshold}
+                            </small>
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="stock-clear">
+                        <Check size={23} />
+                        <strong>
+                          {state.products.length
+                            ? "Stock levels look good"
+                            : "A fresh start for your stock"}
+                        </strong>
+                        <p>
+                          {state.products.length
+                            ? "No products below their alert threshold."
+                            : "Add products to keep an eye on your inventory."}
+                        </p>
+                      </div>
+                    )}
+                    <button
+                      className="stock-link"
+                      onClick={() => setPage("Inventory")}
+                    >
+                      Open inventory <ChevronRight size={16} />
+                    </button>
+                  </section>
+                </div>
               </div>
             </>
           )}
@@ -1133,7 +1210,11 @@ function Home({
                   />
                 </div>
               </div>
-              <div className="table-wrap">
+              <MobileProducts
+                products={filtered}
+                onAdd={() => setModal("product")}
+              />
+              <div className="table-wrap inventory-desktop-table">
                 <table>
                   <thead>
                     <tr>
@@ -1285,7 +1366,7 @@ function Home({
                   </div>
                 )}
               </section>
-              <section className="panel checkout">
+              <section className="panel checkout" id="sale-checkout">
                 <div className="panel-heading">
                   <h2>Current sale</h2>
                   <span className="badge">
@@ -1645,6 +1726,107 @@ function Home({
           </footer>
         </main>
       </div>
+      <nav className="mobile-bottom-nav" aria-label="Main navigation">
+        {(
+          [
+            { page: "Overview", label: "Home", icon: LayoutDashboard },
+            { page: "Inventory", label: "Stock", icon: Package },
+            { page: "Record sale", label: "Sell", icon: Plus },
+            { page: "Customers & credit", label: "Credit", icon: Users },
+          ] as const
+        ).map(({ page: target, label, icon: Icon }) => (
+          <button
+            key={target}
+            className={`${page === target ? "selected" : ""} ${label === "Sell" ? "sell-tab" : ""}`}
+            aria-current={page === target ? "page" : undefined}
+            onClick={() => navigateMobile(target)}
+          >
+            <span>
+              <Icon size={21} />
+            </span>
+            {label}
+          </button>
+        ))}
+        <button
+          className={
+            mobileMore ||
+            ![
+              "Overview",
+              "Inventory",
+              "Record sale",
+              "Customers & credit",
+            ].includes(page)
+              ? "selected"
+              : ""
+          }
+          aria-expanded={mobileMore}
+          onClick={() => setMobileMore(true)}
+        >
+          <span>
+            <Menu size={21} />
+          </span>
+          More
+        </button>
+      </nav>
+      {mobileMore && (
+        <div
+          className="mobile-menu-overlay"
+          onClick={() => setMobileMore(false)}
+        >
+          <section
+            className="mobile-menu-sheet"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Business menu"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mobile-menu-heading">
+              <div>
+                <small>YOUR BUSINESS</small>
+                <h2>{initialWorkspace.name}</h2>
+              </div>
+              <button
+                className="mobile-close"
+                aria-label="Close menu"
+                onClick={() => setMobileMore(false)}
+              >
+                <X size={21} />
+              </button>
+            </div>
+            <div className="mobile-menu-links">
+              {[
+                ...navigation,
+                ["Settings & data", Settings],
+                ["Help & documentation", CircleHelp],
+              ].map(([label, Icon]) => {
+                const target =
+                  label === "Settings & data"
+                    ? "Settings"
+                    : label === "Help & documentation"
+                      ? "Help"
+                      : label;
+                return (
+                  <button
+                    key={String(label)}
+                    onClick={() => navigateMobile(String(target))}
+                  >
+                    <Icon size={20} />
+                    <span>{String(label)}</span>
+                    <ChevronRight size={17} />
+                  </button>
+                );
+              })}
+            </div>
+            <button
+              className="mobile-signout"
+              disabled={busy || syncing}
+              onClick={() => onExit().catch((e) => setError(e.message))}
+            >
+              <LogOut size={19} /> Sign out
+            </button>
+          </section>
+        </div>
+      )}
       {modal && (
         <div className="modal-overlay">
           <section
@@ -1871,7 +2053,7 @@ function Home({
                       disabled={!image || scanning || !online}
                       onClick={analyse}
                     >
-                      <Sparkles size={16} />
+                      <Camera size={16} />
                       {scanning
                         ? "Reading your photo…"
                         : "Suggest stock from photo"}

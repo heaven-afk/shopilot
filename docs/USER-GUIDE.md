@@ -16,6 +16,12 @@ Opening stock is the quantity already held. Receive stock adds a later delivery.
 
 ## Sell goods
 
+### On a phone
+
+The mobile app uses bottom navigation: Home, Stock, Sell, Credit, and More. More contains sales history, business insights, settings, help, and sign-out. The home screen has a daily sales summary, collected money, customer credit, quick stock actions, a weekly sales view, and receipt cards. Stock and sales lists use phone-friendly cards instead of wide tables. While recording a sale, the Review sale bar jumps to the checkout summary. Desktop retains its sidebar and table layouts.
+
+### Record a sale
+
 Open Record sale, select products, and set quantities. Leave the payment amount blank for full payment or enter an amount, including zero, for a credit sale. A customer name/phone/reference is required if a balance remains. Select the payment method actually used. Card and transfer labels record staff entries; Shopilot does not contact the terminal or bank to verify them.
 
 Confirm once. Saving is protected against repeated clicks, and database replay uses the sale reference to avoid a second deduction. The receipt opens after a successful local save. Print / Save PDF opens the browser print dialog. Reprinting a receipt from history does not create a sale.

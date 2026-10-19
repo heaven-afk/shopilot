@@ -1,4 +1,4 @@
-const CACHE = "shopilot-shell-v3-password";
+const CACHE = "shopilot-shell-v4-mobile";
 self.addEventListener("install", (event) => {
   self.skipWaiting();
 });
