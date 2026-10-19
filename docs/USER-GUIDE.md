@@ -6,6 +6,12 @@ Choose Create an account from the opening screen, enter your owner details, conf
 
 Add products in Inventory. Enter prices in naira; the app stores exact kobo amounts internally. Choose an explicit unit, for example `bottle` or `carton of 24`. Do not record bottles against a carton product: automatic conversions are not implemented in this build.
 
+### Passwords and autofill
+
+Sign-up and password reset include a live strength guide and a checklist for length, uppercase/lowercase letters, numbers, and symbols/spaces. At least eight characters are required; twelve or more are recommended. The checklist is guidance, not an additional composition requirement: a long, unique passphrase is also supported. Strength is an estimate, not a breach check. Use the eye button to show or hide the password without submitting the form. Login does not apply new password-composition rules to an existing account.
+
+Account and business fields have autofill names and autocomplete hints. Password managers can generate and fill new passwords; submission reads current form values even when autofill did not dispatch a React change event. Mobile input sizes and toggle touch targets are designed for small screens. Actual password-manager behaviour can vary by browser/provider.
+
 Opening stock is the quantity already held. Receive stock adds a later delivery. Counting goods already on the shelf is not a delivery: calculate the difference and record a reasoned adjustment instead.
 
 ## Sell goods

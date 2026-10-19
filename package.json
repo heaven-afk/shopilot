@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "description": "Shopilot inventory, sales, credit, and business insights",
   "scripts": {
-    "test": "node --experimental-strip-types --test tests/domain.test.ts tests/database.test.mjs",
+    "test": "node --experimental-strip-types --test tests/domain.test.ts tests/database.test.mjs tests/password.test.ts",
     "dev": "next dev --hostname 127.0.0.1",
     "build": "next build",
     "start": "next start --hostname 127.0.0.1",

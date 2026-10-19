@@ -10,6 +10,7 @@
 - Actual SQL migration executed using local PostgreSQL/PGlite with a test-only auth shim: tenant read/write isolation, repeat sync without duplicate stock/sales/payments, repayment overpayment rollback, invalid-sale rollback, offline oversell preservation, and recognition quota enforcement passed.
 - Business onboarding migration tested: name/type/phone/address persistence; a new business has empty products, sales, movements and payments; duplicate business setup is rejected; invalid business types roll back creation.
 - Browser: signed-out entry opens sign-in, account creation shows owner name/email/password, and the disconnected account-service state disables authentication without revealing the old dashboard or QA figures. Hosted confirmation/setup/recovery still need configured-service tests.
+- Password UX: browser verified live Weak/Strong feedback, completed recommendation checklist, and show/hide control on a narrow mobile preview. Automated tests cover weak/common/repeated passwords, mixed-character feedback, and long passphrases. Autofill submission uses FormData, field names and autocomplete hints; real saved-credential/provider autofill remains a target-browser acceptance check.
 
 ## Required against configured services before launch
 

@@ -1623,6 +1623,182 @@ input::placeholder {
   font-size: 12px;
   background: #fff;
 }
+.password-field {
+  margin-bottom: 20px;
+  min-width: 0;
+}
+.access-form-card .password-field > label {
+  margin-bottom: 0;
+}
+.password-input-wrap {
+  position: relative;
+  min-width: 0;
+}
+.access-form-card .password-input-wrap input {
+  padding-right: 52px;
+}
+.password-toggle {
+  position: absolute;
+  right: 3px;
+  top: 3px;
+  bottom: 3px;
+  width: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 0;
+  border-radius: 5px;
+  color: #72836a;
+  touch-action: manipulation;
+}
+.password-toggle:hover {
+  background: #edf3e7;
+  color: #244d37;
+}
+.password-guidance {
+  margin-top: 11px;
+}
+.password-guidance p {
+  font-size: 10px;
+  line-height: 1.7;
+  margin: 0;
+}
+.password-minimum {
+  color: #819174;
+}
+.password-strength-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 10px;
+  color: #829176;
+  margin-top: 12px;
+}
+.password-strength-heading strong {
+  color: #4f6643;
+  font-size: 11px;
+}
+.password-meter {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 5px;
+  margin: 8px 0 12px;
+}
+.password-meter span {
+  height: 4px;
+  background: #e6ebdf;
+  border-radius: 5px;
+  transition: background 0.15s;
+}
+.password-meter.strength-1 .filled {
+  background: #c17461;
+}
+.password-meter.strength-2 .filled {
+  background: #c29c50;
+}
+.password-meter.strength-3 .filled {
+  background: #8aaa64;
+}
+.password-meter.strength-4 .filled {
+  background: #42775b;
+}
+.password-checklist {
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px 12px;
+  padding: 0;
+  margin: 0 0 11px;
+}
+.password-checklist li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  color: #8c9782;
+}
+.password-checklist svg {
+  flex-shrink: 0;
+}
+.password-checklist .met {
+  color: #4d7852;
+}
+.password-hint {
+  color: #8b967f;
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+.access-form-card input {
+  min-width: 0;
+  max-width: 100%;
+  scroll-margin-block: 90px;
+}
+.access-form-card input:-webkit-autofill {
+  -webkit-text-fill-color: #30472c;
+  caret-color: #30472c;
+  animation-name: shopilot-autofill;
+  animation-duration: 0.01s;
+}
+.access-form-card input:autofill {
+  animation-name: shopilot-autofill;
+  animation-duration: 0.01s;
+}
+@keyframes shopilot-autofill {
+  from {
+    opacity: 0.99;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@media (max-width: 650px) {
+  .access-form-card input,
+  .access-form-card select {
+    font-size: 16px;
+    min-height: 46px;
+  }
+  .password-toggle {
+    min-width: 44px;
+    min-height: 40px;
+  }
+  .access-form-side {
+    padding-left: 22px;
+    padding-right: 22px;
+  }
+  .access-form-card {
+    min-width: 0;
+  }
+  .access-form-card .button.primary {
+    white-space: normal;
+    text-align: left;
+    gap: 12px;
+  }
+  .access-form-card h2 {
+    overflow-wrap: break-word;
+  }
+  .auth-switch {
+    line-height: 1.8;
+  }
+  .password-checklist {
+    column-gap: 8px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .password-meter span {
+    transition: none;
+  }
+}
 .access-form-card .button.primary {
   min-height: 45px;
   font-size: 12px;

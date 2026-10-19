@@ -12,6 +12,7 @@ import {
 import { getSupabase } from "../lib/supabase";
 import { setStorageScope } from "../lib/storage";
 import type { Workspace } from "./cloud-settings";
+import PasswordField from "./password-field";
 type Access = {
   workspace: Workspace;
   userId: string;
@@ -152,19 +153,25 @@ export default function AccessGate({
   async function authenticate(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!client) return;
+    const form = new FormData(event.currentTarget);
+    const submittedEmail = String(form.get("email") || "").trim();
+    const submittedPassword = String(form.get("password") || "");
+    const submittedOwnerName = String(form.get("ownerName") || "").trim();
+    setEmail(submittedEmail);
+    setPassword(submittedPassword);
     setBusy(true);
     setMessage("");
     try {
       const result =
         view === "signup"
           ? await client.auth.signUp({
-              email: email.trim(),
-              password,
-              options: { data: { owner_name: ownerName.trim() } },
+              email: submittedEmail,
+              password: submittedPassword,
+              options: { data: { owner_name: submittedOwnerName } },
             })
           : await client.auth.signInWithPassword({
-              email: email.trim(),
-              password,
+              email: submittedEmail,
+              password: submittedPassword,
             });
       if (result.error) throw result.error;
       if (!result.data.session) {
@@ -180,14 +187,21 @@ export default function AccessGate({
   async function setup(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!client) return;
+    const form = new FormData(event.currentTarget);
+    const details = {
+      name: String(form.get("businessName") || "").trim(),
+      type: String(form.get("businessType") || "Retail shop"),
+      phone: String(form.get("phone") || "").trim(),
+      address: String(form.get("address") || "").trim(),
+    };
     setBusy(true);
     setMessage("");
     try {
       const { data, error } = await client.rpc("setup_business", {
-        workspace_name: businessName.trim(),
-        business_type: businessType,
-        business_phone: phone.trim(),
-        business_address: address.trim(),
+        workspace_name: details.name,
+        business_type: details.type,
+        business_phone: details.phone,
+        business_address: details.address,
       });
       if (error) throw error;
       const {
@@ -197,10 +211,10 @@ export default function AccessGate({
       const next: Access = {
         workspace: {
           id: data,
-          name: businessName.trim(),
-          business_type: businessType,
-          phone: phone.trim(),
-          address: address.trim(),
+          name: details.name,
+          business_type: details.type,
+          phone: details.phone,
+          address: details.address,
         },
         userId: session.user.id,
         email: session.user.email || "",
@@ -231,13 +245,17 @@ export default function AccessGate({
     setView("login");
   }
   async function resetPassword() {
-    if (!client || !email.trim()) {
+    const enteredEmail =
+      (
+        document.getElementById("account-email") as HTMLInputElement | null
+      )?.value.trim() || email.trim();
+    if (!client || !enteredEmail) {
       setMessage("Enter your account email first.");
       return;
     }
     setBusy(true);
     try {
-      const { error } = await client.auth.resetPasswordForEmail(email.trim(), {
+      const { error } = await client.auth.resetPasswordForEmail(enteredEmail, {
         redirectTo: window.location.origin,
       });
       if (error) throw error;
@@ -253,9 +271,14 @@ export default function AccessGate({
   async function updatePassword(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!client) return;
+    const submittedPassword = String(
+      new FormData(event.currentTarget).get("password") || "",
+    );
     setBusy(true);
     try {
-      const { error } = await client.auth.updateUser({ password });
+      const { error } = await client.auth.updateUser({
+        password: submittedPassword,
+      });
       if (error) throw error;
       await exit();
       setMessage("Password updated. Sign in with your new password.");
@@ -340,7 +363,7 @@ export default function AccessGate({
                     : view === "confirm"
                       ? `We sent a confirmation link to ${email}. Confirm your email, then sign in to set up your business.`
                       : view === "recovery"
-                        ? "Use at least eight characters for your new password."
+                        ? "Choose a unique password you don’t use on another account."
                         : "Sign in to pick up where your business left off."}
               </p>
               {message && (
@@ -360,12 +383,14 @@ export default function AccessGate({
               )}
               {(view === "login" || view === "signup") && (
                 <>
-                  <form onSubmit={authenticate}>
+                  <form onSubmit={authenticate} autoComplete="on">
                     {view === "signup" && (
                       <label>
                         Your name
                         <input
                           required
+                          id="owner-name"
+                          name="ownerName"
                           autoComplete="name"
                           maxLength={100}
                           value={ownerName}
@@ -378,33 +403,25 @@ export default function AccessGate({
                       Email address
                       <input
                         required
+                        id="account-email"
+                        name="email"
                         type="email"
-                        autoComplete="email"
+                        autoComplete="username"
+                        inputMode="email"
+                        autoCapitalize="none"
+                        autoCorrect="off"
+                        spellCheck={false}
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
                         placeholder="you@yourbusiness.com"
                       />
                     </label>
-                    <label>
-                      Password
-                      <input
-                        required
-                        type="password"
-                        autoComplete={
-                          view === "signup"
-                            ? "new-password"
-                            : "current-password"
-                        }
-                        minLength={view === "signup" ? 8 : 1}
-                        value={password}
-                        onChange={(e) => setPassword(e.target.value)}
-                        placeholder={
-                          view === "signup"
-                            ? "At least 8 characters"
-                            : "Enter your password"
-                        }
-                      />
-                    </label>
+                    <PasswordField
+                      key={view}
+                      value={password}
+                      onChange={setPassword}
+                      creating={view === "signup"}
+                    />
                     {view === "login" && (
                       <button
                         className="text-button forgot"
@@ -444,11 +461,14 @@ export default function AccessGate({
                 </>
               )}
               {view === "setup" && (
-                <form onSubmit={setup}>
+                <form onSubmit={setup} autoComplete="on">
                   <label>
                     Business name
                     <input
                       required
+                      id="business-name"
+                      name="businessName"
+                      autoComplete="organization"
                       maxLength={120}
                       value={businessName}
                       onChange={(e) => setBusinessName(e.target.value)}
@@ -458,6 +478,8 @@ export default function AccessGate({
                   <label>
                     Business type
                     <select
+                      id="business-type"
+                      name="businessType"
                       value={businessType}
                       onChange={(e) => setBusinessType(e.target.value)}
                     >
@@ -471,6 +493,8 @@ export default function AccessGate({
                     Business phone <span className="muted">(optional)</span>
                     <input
                       type="tel"
+                      id="business-phone"
+                      name="phone"
                       autoComplete="tel"
                       maxLength={40}
                       value={phone}
@@ -482,6 +506,8 @@ export default function AccessGate({
                     Business address <span className="muted">(optional)</span>
                     <input
                       autoComplete="street-address"
+                      id="business-address"
+                      name="address"
                       maxLength={300}
                       value={address}
                       onChange={(e) => setAddress(e.target.value)}
@@ -521,17 +547,14 @@ export default function AccessGate({
               )}
               {view === "recovery" && (
                 <form onSubmit={updatePassword}>
-                  <label>
-                    New password
-                    <input
-                      type="password"
-                      autoComplete="new-password"
-                      minLength={8}
-                      required
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                    />
-                  </label>
+                  <PasswordField
+                    key="recovery"
+                    id="recovery-password"
+                    label="New password"
+                    creating
+                    value={password}
+                    onChange={setPassword}
+                  />
                   <button className="button primary full" disabled={busy}>
                     Update password
                   </button>
