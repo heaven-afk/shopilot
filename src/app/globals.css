@@ -1501,6 +1501,11 @@ input::placeholder {
 .platform-heading h1 {
   margin-top: 10px;
 }
+.platform-heading-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
 .platform-heading p {
   font-size: 12px;
   color: #87967c;

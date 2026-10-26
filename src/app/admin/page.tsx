@@ -8,8 +8,10 @@ import {
   RefreshCw,
   ShieldCheck,
   ArrowLeft,
+  LogOut,
 } from "lucide-react";
 import { getSupabase } from "../../lib/supabase";
+import { setStorageScope } from "../../lib/storage";
 import type { PlatformDashboard, PlatformRole } from "../../lib/contracts";
 export default function Admin() {
   const [role, setRole] = useState<PlatformRole | null>(null),
@@ -19,7 +21,10 @@ export default function Admin() {
     [signedIn, setSignedIn] = useState(false);
   const client = getSupabase();
   const generation = useRef(0);
+  const signingOut = useRef(false);
+  const [loggingOut, setLoggingOut] = useState(false);
   async function load() {
+    if (signingOut.current) return;
     const revision = ++generation.current;
     setBusy(true);
     setMessage("");
@@ -92,6 +97,28 @@ export default function Admin() {
       window.removeEventListener("offline", offline);
     };
   }, [client]);
+  async function signOut() {
+    if (!client || signingOut.current) return;
+    signingOut.current = true;
+    setLoggingOut(true);
+    generation.current++;
+    setData(null);
+    setRole(null);
+    setBusy(false);
+    setMessage("");
+    try {
+      const { error } = await client.auth.signOut({ scope: "local" });
+      if (error) throw error;
+      localStorage.removeItem("shopilot-authorised-business-v1");
+      setStorageScope(null);
+      setSignedIn(false);
+      window.location.assign("/?next=/admin");
+    } catch {
+      setMessage("Could not sign out. Please try again.");
+      signingOut.current = false;
+      setLoggingOut(false);
+    }
+  }
   async function access(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!client) return;
@@ -121,9 +148,20 @@ export default function Admin() {
             Registered businesses, activity, and access. Billing is on hold.
           </p>
         </div>
-        <a className="button secondary" href="/">
-          <ArrowLeft size={16} /> Back to business
-        </a>
+        <div className="platform-heading-actions">
+          <a className="button secondary" href="/">
+            <ArrowLeft size={16} /> Back to business
+          </a>
+          {signedIn && (
+            <button
+              className="button secondary"
+              onClick={signOut}
+              disabled={loggingOut}
+            >
+              <LogOut size={16} /> {loggingOut ? "Signing out…" : "Sign out"}
+            </button>
+          )}
+        </div>
       </header>
       {message && (
         <div className="banner" role="status">
